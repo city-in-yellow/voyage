@@ -1,0 +1,43 @@
+job "cat" {
+  datacenters = ["spicerack"]
+  type        = "service"
+
+  group "cat" {
+    count = 1
+
+    service {
+      name = "cat"
+    }
+
+    restart {
+      attempts = 2
+      interval = "30m"
+      delay    = "15s"
+      mode     = "fail"
+    }
+
+    vault {
+      policies      = ["nomad"]
+      change_mode   = "signal"
+      change_signal = "SIGHUP"
+    }
+
+    task "cat" {
+      driver = "exec"
+      config {
+        command = "/usr/bin/cat"
+        args    = ["local/config/Caddyfile"]
+      }
+
+      template {
+        data = <<EOF
+${caddyfile}
+EOF
+
+        destination   = "local/config/Caddyfile"
+        change_mode   = "signal"
+        change_signal = "SIGHUP"
+      }
+    }
+  }
+}

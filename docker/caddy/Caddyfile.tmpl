@@ -1,0 +1,74 @@
+
+{{- range services -}}
+  {{ $name := .Name }}
+  {{- range service .Name -}}
+    {{- with $route := index .ServiceMeta "route" -}}
+      {{- scratch.MapSetX "routes" $route $name -}} 
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+
+{{- with secret "secret/data/cloudflare" -}}
+  {{- scratch.Set "cloudflare_key" .Data.data.api_key -}}
+{{- end -}}
+
+{
+  debug
+  http_port {$NOMAD_PORT_http}
+  https_port {$NOMAD_PORT_https}
+  default_bind 0.0.0.0
+
+  email ilyfr@iridi.cc
+
+  acme_dns cloudflare {{ scratch.Get "cloudflare_key" }}
+
+  storage "consul" {
+    address "{{ env "attr.unique.network.ip-address" }}:8500"
+    tls_enabled false
+    tls_insecure true
+    prefix "caddytls"
+  }
+
+  dynamic_dns {
+    provider cloudflare {{ scratch.Get "cloudflare_key"  }}
+
+    domains {
+      iridi.cc
+    }
+
+    versions ipv4
+    ttl 1h
+  }
+}
+
+iridi.cc {
+  respond "Hello World!"
+}
+
+hw.iridi.cc {
+  respond "Hello World!"
+}
+
+{{ range $route, $name := scratch.Get "routes" -}}
+{{ $route }}.iridi.cc {
+  {{ range service $name -}}
+  reverse_proxy "http://{{ .Address }}:{{ .Port }}"
+  {{- end }}
+  log {
+    output stdout
+  }
+}
+{{ end }}
+
+# Health check endpoint
+http://0.0.0.0:{$NOMAD_PORT_health} {
+  respond 200 /health
+}
+
+# Log all other traffic for debugging
+:{$NOMAD_PORT_https} {
+  respond 404
+  log {
+    output stdout
+  }
+}

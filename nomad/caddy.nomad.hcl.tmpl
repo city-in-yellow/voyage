@@ -1,0 +1,80 @@
+job "caddy" {
+  datacenters = ["spicerack"]
+  type        = "system"
+
+  group "caddy" {
+    restart {
+      mode     = "delay"
+      delay    = "10s"
+      attempts = 3
+      interval = "2m"
+    }
+
+    update {
+      auto_revert = true
+    }
+
+    network {
+      mode = "host"
+      port "http" {
+        static = 2650
+        to     = 2650
+      }
+      port "https" {
+        static = 2651
+        to     = 2651
+      }
+      port "health" {}
+    }
+
+    service {
+      name = "caddy"
+      port = "http"
+
+      check {
+        name     = "alive"
+        type     = "http"
+        port     = "health"
+        path     = "/health"
+        interval = "10s"
+        timeout  = "2s"
+      }
+    }
+
+    vault {
+      policies      = ["nomad"]
+      change_mode   = "signal"
+      change_signal = "SIGHUP"
+    }
+
+    task "caddy" {
+      driver = "docker"
+
+      config {
+        network_mode = "host"
+        image        = "ttl.sh/f5664482-fa92-4fd3-966c-7f135014f49d:24h"
+        force_pull   = true
+        ports        = ["http", "https", "health"]
+        volumes = [
+          "local/config:/etc/caddy",
+          "/mnt/emerald/caddy/data:/data"
+        ]
+      }
+
+      template {
+        data = <<EOF
+${caddyfile}
+EOF
+
+        destination   = "local/config/Caddyfile"
+        change_mode   = "signal"
+        change_signal = "SIGHUP"
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+    }
+  }
+}
